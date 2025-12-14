@@ -1,0 +1,88 @@
+version: '3.8'
+
+services:
+  # ChromaDB Vector Database
+  chromadb:
+    image: chromadb/chroma:0.5.0
+    container_name: rag-chromadb
+    ports:
+      - "9753:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+    environment:
+      - IS_PERSISTENT=TRUE
+      - ANONYMIZED_TELEMETRY=FALSE
+      - CHROMA_SERVER_HOST=0.0.0.0
+    networks:
+      - rag-network
+    restart: unless-stopped
+
+  # FastAPI Backend
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: rag-backend
+    ports:
+      - "9754:9754"
+    volumes:
+      - ./backend/documents:/app/documents
+    environment:
+      - CHROMA_HOST=chromadb
+      - CHROMA_PORT=8000
+      # LLM Provider Settings
+      - LLM_PROVIDER=${LLM_PROVIDER:-bedrock}
+      # AWS Bedrock Settings
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - BEDROCK_MODEL_ID=${BEDROCK_MODEL_ID:-anthropic.claude-3-haiku-20240307-v1:0}
+      # Ollama Settings (alternative)
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://ollama:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama2}
+      # OpenAI Settings (alternative)
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-3.5-turbo}
+      - DEBUG=${DEBUG:-false}
+    depends_on:
+      - chromadb
+    networks:
+      - rag-network
+    restart: unless-stopped
+
+  # Next.js Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: rag-frontend
+    ports:
+      - "9755:9755"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:9754
+    depends_on:
+      - backend
+    networks:
+      - rag-network
+    restart: unless-stopped
+
+  # Ollama (Optional - Local LLM)
+  ollama:
+    image: ollama/ollama:latest
+    container_name: rag-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - rag-network
+    profiles:
+      - ollama
+
+networks:
+  rag-network:
+    driver: bridge
+
+volumes:
+  chroma_data:
+  ollama_data:
